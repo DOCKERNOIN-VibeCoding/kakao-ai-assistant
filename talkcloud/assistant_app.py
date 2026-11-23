@@ -20,6 +20,7 @@ from collector import CONFIG, cloud_sync_warning, db_open, load_config, norm_tit
 # 업무 자료는 이 PC 에만 둔다(2026-11-23 사용자 요구). 비서 업무는 대화 기록이 이 PC 에만 남는 Claude Code·Codex 에서만 쓰고,
 # 대화 기록이 계정에 저장되는 데스크톱 채팅 앱(Claude 데스크톱·ChatGPT 데스크톱)에는 연결하지 않는다.
 import updater
+from live_capture import LiveCapture
 from privacy import exclude_room
 from sync_conversations import last_sync_date, run as sync_run, vendor_room_titles
 
@@ -273,6 +274,8 @@ class App:
                 self.root.deiconify()   # 설정을 물어야 하므로 창을 보여 준다
             self.root.after(500, self.ask_collect_months)
         self._start_tray()
+        self.live = LiveCapture(self.cfg, self.log)
+        self.root.after(2000, self._apply_live)
         self.root.after(15000, self.check_update)   # 시작 15초 뒤 새 버전 확인(있으면 설치 여부를 묻는다)
         threading.Thread(target=self._worker, daemon=True).start()
         self.root.after(300, self._drain)
@@ -305,16 +308,20 @@ class App:
         ttk.Spinbox(box, from_=3, to=120, width=5, textvariable=self.del_months_var).grid(row=2, column=1, sticky="w")
         ttk.Label(box, text="개월 지난 대화·파일·사진을 이 PC 에서 지움 (기본 꺼짐·12개월, 카카오톡 원본은 그대로)").grid(
             row=2, column=2, sticky="w", **pad)
-        ttk.Checkbutton(box, text="PC 로그인 시 자동 실행", variable=self.auto_var).grid(row=3, column=0, columnspan=2, sticky="w", **pad)
-        ttk.Button(box, text="저장", command=self.save).grid(row=3, column=2, sticky="e", **pad)
-        ttk.Label(box, text="Claude Code 에서 거래처 대화·자료를 묻고 정리하려면 →").grid(row=4, column=0, columnspan=2, sticky="w", **pad)
-        ttk.Button(box, text="Claude Code MCP 연결", command=self.connect_claude).grid(row=4, column=2, sticky="e", **pad)
-        ttk.Label(box, text="Codex 에서 쓰려면 →").grid(row=5, column=0, columnspan=2, sticky="w", **pad)
-        ttk.Button(box, text="Codex MCP 연결", command=self.connect_codex_btn).grid(row=5, column=2, sticky="e", **pad)
-        ttk.Label(box, text=f"프로그램 버전: {updater.local_version() or '개발용'}").grid(row=7, column=0, columnspan=2, sticky="w", **pad)
-        ttk.Button(box, text="업데이트 확인", command=lambda: self.check_update(manual=True)).grid(row=7, column=2, sticky="e", **pad)
+        self.live_var = tk.BooleanVar(value=bool(self.cfg.get("live_ocr", True)))
+        ttk.Checkbutton(box, text="사용 중 화면 인식:", variable=self.live_var).grid(row=3, column=0, sticky="w", **pad)
+        ttk.Label(box, text="열어 둔 업무방 창을 화면을 뺏지 않고 읽어 임시 대화로 저장 (쉬는 시간에 원문으로 바뀜)").grid(
+            row=3, column=1, columnspan=2, sticky="w", **pad)
+        ttk.Checkbutton(box, text="PC 로그인 시 자동 실행", variable=self.auto_var).grid(row=4, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(box, text="저장", command=self.save).grid(row=4, column=2, sticky="e", **pad)
+        ttk.Label(box, text="Claude Code 에서 거래처 대화·자료를 묻고 정리하려면 →").grid(row=5, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(box, text="Claude Code MCP 연결", command=self.connect_claude).grid(row=5, column=2, sticky="e", **pad)
+        ttk.Label(box, text="Codex 에서 쓰려면 →").grid(row=6, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(box, text="Codex MCP 연결", command=self.connect_codex_btn).grid(row=6, column=2, sticky="e", **pad)
+        ttk.Label(box, text=f"프로그램 버전: {updater.local_version() or '개발용'}").grid(row=8, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(box, text="업데이트 확인", command=lambda: self.check_update(manual=True)).grid(row=8, column=2, sticky="e", **pad)
         ttk.Label(box, text="데스크톱 채팅 앱(Claude·ChatGPT)은 대화 기록이 계정에 저장되어 연결하지 않습니다.",
-                  foreground="gray").grid(row=6, column=0, columnspan=3, sticky="w", **pad)
+                  foreground="gray").grid(row=7, column=0, columnspan=3, sticky="w", **pad)
 
         self.status = tk.StringVar()
         ttk.Label(main, textvariable=self.status, foreground="#1F4E79").pack(anchor="w", **pad)
@@ -392,16 +399,31 @@ class App:
                 APP_NAME, f"오래된 기록 자동 삭제를 켭니다.\n\n수집할 때마다 {del_months}개월이 지난 대화·받은 파일·사진·대화 원문이 "
                           "이 PC 에서 지워지며 되돌릴 수 없습니다.\n(카카오톡·톡클라우드의 원본과 Claude 가 만든 업무 메모·문서 기록은 그대로입니다)"):
             return
+        live_on = bool(self.live_var.get())
         try:
-            save_settings(idle_minutes=minutes, collect_months=months, auto_delete=del_on, auto_delete_months=del_months)
+            save_settings(idle_minutes=minutes, collect_months=months, auto_delete=del_on, auto_delete_months=del_months,
+                          live_ocr=live_on)
             set_autostart(self.auto_var.get())
         except OSError as e:
             messagebox.showerror(APP_NAME, f"설정 저장 실패: {e}")
             return
-        self.cfg.update(idle_minutes=minutes, collect_months=months, auto_delete=del_on, auto_delete_months=del_months)
+        self.cfg.update(idle_minutes=minutes, collect_months=months, auto_delete=del_on, auto_delete_months=del_months,
+                        live_ocr=live_on)
         self._refresh_status()
         self.log(f"설정 저장 — 쉬는 시간 기준 {minutes}분, 처음 가져올 과거 범위 {months}개월(이후 계속 쌓임), "
-                 f"오래된 기록 자동 삭제 {f'켬({del_months}개월)' if del_on else '끔'}, 자동 실행 {'켬' if self.auto_var.get() else '끔'}")
+                 f"오래된 기록 자동 삭제 {f'켬({del_months}개월)' if del_on else '끔'}, 사용 중 화면 인식 {'켬' if live_on else '끔'}, "
+                 f"자동 실행 {'켬' if self.auto_var.get() else '끔'}")
+        self._apply_live()
+
+    def _apply_live(self):
+        """설정에 따라 사용 중 화면 인식을 켜고 끈다. 켜져 있으면 읽을 업무방 목록도 새로 쓴다(방 추가·중단 반영)."""
+        try:
+            if self.cfg.get("live_ocr", True):
+                self.live.refresh_watch() if self.live.running() else self.live.start()
+            else:
+                self.live.stop()
+        except Exception as e:
+            self.log(f"사용 중 화면 인식 설정 실패: {type(e).__name__}: {e}")
 
     def ask_collect_months(self):
         """처음 실행 때: 최근 몇 개월의 대화·파일·사진까지 모을지 묻는다(대화와 파일은 같은 기간)."""
@@ -509,6 +531,7 @@ class App:
         except Exception as e:
             messagebox.showerror(APP_NAME, f"처리 실패: {e}")
         self.refresh_rooms()
+        self._apply_live()
 
     def add_selected(self):
         sel = self.off_tv.selection()
@@ -533,6 +556,7 @@ class App:
             return
         self.log(f"업무방으로 추가 {len(rows)}곳: {', '.join(titles)} (업체 정보는 Claude Code 에서 정리)")
         self.refresh_rooms()
+        self._apply_live()
         self._start_job(titles, f"{len(titles)}곳을 업무방으로 추가했습니다. 이 방들만 지금 수집합니다.")
 
     # ---------- 쉬는 시간 감시 ----------
@@ -549,6 +573,7 @@ class App:
 
     def _collect(self, manual: bool, job: list[str] | None = None):
         self.running = True
+        self.live.paused = True   # 내보내기가 여는 방 창은 화면 인식하지 않는다(곧 원문이 들어옴)
         self.msgs.put(("status", None))
         try:
             if job:   # 방 목록에서 고른 방만 — 한 달 넘게 조용한 방도 연다
@@ -571,6 +596,7 @@ class App:
             self.log(f"오류: {type(e).__name__}: {e}")
         finally:
             self.running = False
+            self.live.paused = False
             self.msgs.put(("status", None))
             self.msgs.put(("rooms", None))
 
@@ -663,6 +689,7 @@ class App:
         self.tray.run_detached()
 
     def quit(self):
+        self.live.stop()
         self.stop.set()
         self.run_now.set()
         self.tray.stop()

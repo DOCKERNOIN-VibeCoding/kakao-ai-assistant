@@ -7,6 +7,7 @@ kakao_exporter.ps1 이 data/exports/ 에 남긴 txt 를 읽어, MCP 도구(get_m
 - 내보내기에는 시각이 분 단위뿐이라, 같은 분 안의 순서를 지키려고 sent_at 초 자리에 그 분 안의 순번(0~59)을 쓴다.
 - 보낸 사람은 이름만 있으므로 people 에 author_hash='export:<이름>' 으로 등록한다.
 - 같은 방·같은 기간의 채팅방 저장소(톡클라우드) 메시지는 중복이므로 지운다(내보내기가 우선).
+  사용 중 화면 인식으로 넣은 임시 대화(snapshot_id 'live:%', live_capture.py)도 내보낸 시각 이전 것은 지운다.
 - 수집 시작점 = 처음 수집한 날(collect_started) − collect_months(기본 3개월). 파일·사진과 같은 시작점이고, 그 뒤로는 계속 쌓인다.
   설정에서 개월 수를 줄이면 시작점보다 오래된 대화는 정리하고,
   늘리면 보관 중인 방별 최신 txt 를 다시 읽어 채운다(txt 에는 방 전체 대화가 들어 있음).
@@ -156,6 +157,9 @@ def import_file(con: sqlite3.Connection, path: Path, keep_from: int) -> dict:
         lo, hi = min(r[5] for r in rows), max(r[5] for r in rows) + 60
         removed = con.execute("DELETE FROM messages WHERE room_key=? AND sent_at>=? AND sent_at<? "
                               "AND (snapshot_id IS NULL OR snapshot_id NOT LIKE 'export:%')", (room_key, lo, hi)).rowcount
+    # 사용 중 화면 인식으로 넣은 임시 대화(live_capture)는 내보낸 시각까지 원문이 생겼으므로 지운다
+    removed += con.execute("DELETE FROM messages WHERE room_key=? AND snapshot_id LIKE 'live:%' AND sent_at<?",
+                           (room_key, int(path.stat().st_mtime) + 60)).rowcount
     added = con.executemany("INSERT OR IGNORE INTO messages VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows).rowcount
     con.execute("INSERT INTO sync_state VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (f"export_at:{room_key}", datetime.fromtimestamp(path.stat().st_mtime, KST).isoformat(timespec="seconds")))

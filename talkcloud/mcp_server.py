@@ -25,6 +25,8 @@ HERE = Path(__file__).resolve().parent
 _cfg = json.loads((HERE / "config.json").read_text(encoding="utf-8")) if (HERE / "config.json").exists() else {}
 # 설정 파일이 없을 때도 collector 와 같은 로컬 폴더(동기화 안 됨)를 쓴다
 DB = Path(_cfg.get("data_dir") or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "KakaoAIAssistant" / "data") / "talkcloud.db"
+# 사용 중 화면 인식(live_capture)으로 넣은 임시 대화 표시 — 글자가 틀릴 수 있고, 쉬는 시간 내보내기 원문으로 바뀐다
+LIVE_NOTE = "화면 인식(임시) — 글자가 틀릴 수 있음, 쉬는 시간에 원문으로 확인 예정"
 
 EXTRA_SCHEMA = """
 CREATE TABLE IF NOT EXISTS reviewed (item_id TEXT PRIMARY KEY, reviewed_at TEXT, note TEXT);
@@ -321,12 +323,18 @@ def _day(s: str, end: bool = False) -> int:
 
 def _msg_rows(c, where: str, params: list, limit: int, order: str = "ASC"):
     rows = c.execute(
-        f"SELECT m.room_key, m.room_title, m.sent_at, COALESCE(p.name,'(알 수 없음)') sender, m.message, m.has_attachment "
-        f"FROM messages m LEFT JOIN people p ON p.author_hash=m.author_hash WHERE {where} "
+        f"SELECT m.room_key, m.room_title, m.sent_at, COALESCE(p.name,'(알 수 없음)') sender, m.message, m.has_attachment, "
+        f"m.snapshot_id FROM messages m LEFT JOIN people p ON p.author_hash=m.author_hash WHERE {where} "
         f"ORDER BY m.sent_at {order} LIMIT ?", params + [limit]).fetchall()
-    return [{"room": r["room_title"], "time": datetime.fromtimestamp(r["sent_at"], KST).strftime("%Y-%m-%d %H:%M"),
+    out = []
+    for r in rows:
+        m = {"room": r["room_title"], "time": datetime.fromtimestamp(r["sent_at"], KST).strftime("%Y-%m-%d %H:%M"),
              "sender": r["sender"], "text": r["message"] if not r["has_attachment"] or r["message"] else "(첨부)",
-             "_t": r["sent_at"], "_room": r["room_key"]} for r in rows]
+             "_t": r["sent_at"], "_room": r["room_key"]}
+        if (r["snapshot_id"] or "").startswith("live:"):
+            m["provisional"] = LIVE_NOTE
+        out.append(m)
+    return out
 
 
 def _clean(msgs):
@@ -409,7 +417,8 @@ def recent_updates(since: str | None = None, hours: int = 24, work_rooms_only: b
         never = [t for rid, t in c.execute("SELECT v.room_id, COALESCE(r.title, v.room_id) FROM vendor_rooms v "
                                            "LEFT JOIN rooms r ON r.room_id=v.room_id") if rid not in exported]
     return {"since": datetime.fromtimestamp(start, KST).strftime("%Y-%m-%d %H:%M"),
-            "note": "대화는 방마다 PC 카카오톡에서 내보낸 시점(rooms[].conversation_as_of)까지만 반영됨",
+            "note": "대화는 방마다 PC 카카오톡에서 내보낸 시점(rooms[].conversation_as_of)까지 원문이고, 그 뒤에 사용 중 열어 둔 "
+                    "업무방 창에서 화면 인식한 메시지는 provisional 표시(글자가 틀릴 수 있는 임시본 — 인용할 때 '화면 인식' 이라고 밝힐 것)",
             "work_rooms_never_exported": never,
             "rooms": list(rooms.values())}
 
