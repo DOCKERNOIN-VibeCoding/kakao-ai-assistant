@@ -5,6 +5,8 @@
 !CLAUDE.md
 !VERSION
 !requirements.txt
+!설치.cmd
+!install.ps1
 !talkcloud/
 !talkcloud/*.py
 !talkcloud/*.ps1

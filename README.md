@@ -11,18 +11,22 @@ Claude Code 가 거래처별 견적서·계산서 정리, 최근 변경 요약, 
 
 ## 준비물
 - Windows 10/11, PC 카카오톡(로그인 상태), Microsoft Edge
-- Python 3.12 이상
+- Python 3.12 이상(없으면 설치.cmd 가 설치)
 - 카카오 톡클라우드(톡서랍) 구독 — 파일·사진 수집용
 - Claude Code (비서 업무용 — 대화 기록이 이 PC 에만 남습니다)
 
 ## 설치
-```powershell
-pip install -r requirements.txt
-pythonw -X utf8 talkcloud\assistant_app.py
-```
+1. [Releases](../../releases/latest) 에서 **Source code (zip)** 을 받아 압축을 풉니다.
+2. 압축을 푼 폴더의 **`설치.cmd`** 를 더블클릭합니다(보안 경고가 뜨면 [실행]).
+   - 프로그램을 `%LOCALAPPDATA%\KakaoAIAssistant\app` 에 설치합니다(압축 푼 폴더는 지워도 됩니다).
+   - Python 3.12 이상이 없으면 자동으로 설치하고, 필요한 패키지를 받습니다.
+   - Windows 한국어 글자 인식(OCR) 기능이 없으면 설치할지 묻습니다(관리자 권한).
+   - 시작 메뉴·바탕화면에 바로가기를 만들고 앱을 실행합니다. 다시 설치해도 설정·수집 자료는 그대로입니다.
+
+이후:
 1. 처음 실행하면 "처음 수집할 때 과거 몇 개월치까지 가져올까요?"를 묻습니다(기본 3개월, 이후로는 계속 쌓임).
 2. 설정 창에서 **[Claude Code MCP 연결]** 을 누르고 Claude Code 를 다시 시작합니다.
-3. 이 폴더에서 Claude Code 를 열고 "카카오톡 업무방 등록해 줘"라고 하면, 업무방 후보를 보여 주고 확인을 받아 등록한 뒤 첫 수집을 진행합니다.
+3. 설치 폴더(`%LOCALAPPDATA%\KakaoAIAssistant\app`)에서 Claude Code 를 열고 "카카오톡 업무방 등록해 줘"라고 하면, 업무방 후보를 보여 주고 확인을 받아 등록한 뒤 첫 수집을 진행합니다.
 4. 톡클라우드 파일 수집: `python -X utf8 talkcloud\collector.py once` — 처음 한 번 카카오 로그인 창이 뜹니다.
 
 설정 창에서 'PC 로그인 시 자동 실행'을 켜면 트레이에 상주하며 쉬는 시간에 알아서 모읍니다.
@@ -30,7 +34,7 @@ pythonw -X utf8 talkcloud\assistant_app.py
 ## 업데이트
 앱이 켜질 때(또는 설정 창의 [업데이트 확인]) GitHub 의 최신 릴리스를 확인하고, 새 버전이 있으면 변경 내용을 보여 주며 설치할지 묻습니다.
 설치하면 프로그램 파일만 바뀌고 설정·수집 자료는 그대로이며, 이전 파일은 `_backup/<이전 버전>/` 에 남습니다.
-비공개 저장소에서 받으려면 GitHub CLI 로그인(`gh auth login`)이 필요합니다.
+GitHub 로그인 없이 업데이트를 받을 수 있습니다.
 
 ## 개인정보
 이 저장소에는 프로그램 코드만 있습니다. 설정(`config.json`)·수집 데이터·로그는 저장소에 포함되지 않으며 각 PC 의 로컬 폴더에만 생깁니다.
