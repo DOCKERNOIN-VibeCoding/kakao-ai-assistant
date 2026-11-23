@@ -1,0 +1,4 @@
+mcp>=2.3
+playwright>=1.50
+pystray>=0.19
+pillow>=10.0

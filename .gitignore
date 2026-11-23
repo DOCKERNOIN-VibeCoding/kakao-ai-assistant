@@ -1,0 +1,16 @@
+# 화이트리스트: 기본은 전부 제외하고 프로그램 파일만 허용한다(비밀 값·수집 데이터가 실수로 들어가지 않게)
+*
+!.gitignore
+!README.md
+!CLAUDE.md
+!VERSION
+!requirements.txt
+!talkcloud/
+!talkcloud/*.py
+!talkcloud/*.ps1
+# 프로그램 폴더 안에서도 다음은 절대 제외
+talkcloud/config.json
+talkcloud/data/
+talkcloud/__pycache__/
+*.env
+.env*
