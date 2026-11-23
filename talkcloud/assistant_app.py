@@ -19,6 +19,7 @@ from collector import CONFIG, cloud_sync_warning, db_open, load_config, norm_tit
 
 # 업무 자료는 이 PC 에만 둔다(2026-11-23 사용자 요구). 비서 업무는 대화 기록이 이 PC 에만 남는 Claude Code·Codex 에서만 쓰고,
 # 대화 기록이 계정에 저장되는 데스크톱 채팅 앱(Claude 데스크톱·ChatGPT 데스크톱)에는 연결하지 않는다.
+import updater
 from privacy import exclude_room
 from sync_conversations import last_sync_date, run as sync_run, vendor_room_titles
 
@@ -272,6 +273,7 @@ class App:
                 self.root.deiconify()   # 설정을 물어야 하므로 창을 보여 준다
             self.root.after(500, self.ask_collect_months)
         self._start_tray()
+        self.root.after(15000, self.check_update)   # 시작 15초 뒤 새 버전 확인(있으면 설치 여부를 묻는다)
         threading.Thread(target=self._worker, daemon=True).start()
         self.root.after(300, self._drain)
 
@@ -309,6 +311,8 @@ class App:
         ttk.Button(box, text="Claude Code MCP 연결", command=self.connect_claude).grid(row=4, column=2, sticky="e", **pad)
         ttk.Label(box, text="Codex 에서 쓰려면 →").grid(row=5, column=0, columnspan=2, sticky="w", **pad)
         ttk.Button(box, text="Codex MCP 연결", command=self.connect_codex_btn).grid(row=5, column=2, sticky="e", **pad)
+        ttk.Label(box, text=f"프로그램 버전: {updater.local_version() or '개발용'}").grid(row=7, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Button(box, text="업데이트 확인", command=lambda: self.check_update(manual=True)).grid(row=7, column=2, sticky="e", **pad)
         ttk.Label(box, text="데스크톱 채팅 앱(Claude·ChatGPT)은 대화 기록이 계정에 저장되어 연결하지 않습니다.",
                   foreground="gray").grid(row=6, column=0, columnspan=3, sticky="w", **pad)
 
@@ -594,6 +598,10 @@ class App:
             elif kind == "show":
                 self.root.deiconify()
                 self.root.lift()
+            elif kind == "update":
+                self.offer_update(payload)
+            elif kind == "info":
+                messagebox.showinfo(APP_NAME, payload)
             elif kind == "collect":
                 self.collect_now()
             elif kind == "quit":
@@ -602,6 +610,45 @@ class App:
         self.root.after(300, self._drain)
 
     # ---------- 트레이 ----------
+    # ---------- 업데이트(GitHub 릴리스, 사용자 확인 후 설치) ----------
+    def check_update(self, manual: bool = False):
+        ok, why = updater.enabled()
+        if not ok:
+            if manual:
+                messagebox.showinfo(APP_NAME, why)
+            return
+
+        def work():
+            try:
+                info = updater.check()
+            except Exception as e:
+                self.log(f"업데이트 확인 실패: {e}")
+                if manual:
+                    self.msgs.put(("info", f"업데이트 확인 실패: {e}"))
+                return
+            if info:
+                self.msgs.put(("update", info))
+            elif manual:
+                self.msgs.put(("info", f"최신 버전입니다({updater.local_version()})."))
+        threading.Thread(target=work, daemon=True).start()
+
+    def offer_update(self, info: dict):
+        if self.running:
+            self.log(f"새 버전 {info['version']} 이 있습니다 — 수집이 끝난 뒤 [업데이트 확인]을 눌러 설치하세요.")
+            return
+        notes = info["notes"] or "(변경 내용 없음)"
+        if not messagebox.askyesno(APP_NAME, f"새 버전 {info['version']} 이 있습니다(지금 {updater.local_version()}).\n\n"
+                                             f"{notes}\n\n지금 설치할까요? 프로그램 파일만 바뀌고 설정·수집 자료는 그대로입니다."):
+            return
+        try:
+            msg = updater.install(info, log=self.log)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"업데이트 설치 실패: {e}")
+            return
+        messagebox.showinfo(APP_NAME, f"{msg}\n\n앱을 다시 시작합니다. 열려 있는 Claude Code 도 다시 시작해야 새 기능이 반영됩니다.")
+        updater.restart_app()
+        self.quit()
+
     def _start_tray(self):
         import pystray
         from PIL import Image, ImageDraw
